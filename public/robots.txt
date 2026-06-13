@@ -1,0 +1,12 @@
+# https://www.robotstxt.org/robotstxt.html
+
+User-agent: *
+Allow: /
+
+# Exclude administrative/private URLs
+Disallow: /admin
+Disallow: /checkout
+Disallow: /cart
+
+# Sitemap location
+Sitemap: https://sanori-ecommerce.vercel.app/sitemap.xml
