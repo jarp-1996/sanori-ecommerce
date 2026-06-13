@@ -1,14 +1,31 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, initializeFirestore, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { useState, useEffect } from 'react';
 
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); // CRITICAL
+
+// Use initializeFirestore with long-polling setting to guarantee robust connection in sandboxed iframe or VPN/proxy networks
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, firebaseConfig.firestoreDatabaseId); // CRITICAL
+
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+// Validate Firestore connection initially
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration: Firestore client is offline.");
+    }
+  }
+}
+testConnection();
 
 export const googleProvider = new GoogleAuthProvider();
 
