@@ -47,9 +47,12 @@ service cloud.firestore {
       return data.keys().hasAll(['userId', 'items', 'total', 'status', 'paymentMethod', 'createdAt']) &&
              data.userId is string && data.userId.size() <= 128 &&
              (data.keys().hasAll(['customerEmail']) ? data.customerEmail is string && data.customerEmail.size() <= 200 : true) &&
+             (data.keys().hasAll(['customerName']) ? data.customerName is string && data.customerName.size() <= 200 : true) &&
+             (data.keys().hasAll(['customerPhone']) ? data.customerPhone is string && data.customerPhone.size() <= 100 : true) &&
+             (data.keys().hasAll(['paymentVerified']) ? data.paymentVerified is bool : true) &&
              data.items is list && data.items.size() > 0 && data.items.size() <= 100 &&
              data.total is number && data.total >= 0 &&
-             data.status in ['pending', 'paid', 'shipped', 'delivered'] &&
+             data.status in ['pending', 'paid', 'prepared', 'shipped', 'delivered'] &&
              data.paymentMethod in ['yape', 'card'] &&
              data.createdAt is timestamp;
     }

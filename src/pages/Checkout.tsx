@@ -13,8 +13,16 @@ export default function Checkout() {
   const [paymentMethod, setPaymentMethod] = useState<'yape' | 'card'>('yape');
   const [district, setDistrict] = useState('lima');
   const [address, setAddress] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [processing, setProcessing] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
+
+  React.useEffect(() => {
+    if (user) {
+      setCustomerName(user.displayName || profile?.name || '');
+    }
+  }, [user, profile]);
 
   if (!user && items.length > 0 && !orderComplete) {
     navigate('/cart');
@@ -34,6 +42,9 @@ export default function Checkout() {
       await setDoc(orderRef, {
         userId: user.uid,
         customerEmail: user.email,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        paymentVerified: false,
         items: items,
         total: finalTotal,
         status: 'pending',
@@ -79,12 +90,36 @@ export default function Checkout() {
               {profile && <p className="mb-4 text-sm text-earth-light">Email: {profile.email}</p>}
               
               <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-earth-light mb-2">Nombre Completo</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Juan Pérez"
+                      className="w-full bg-offwhite border border-kraft focus:border-nativa outline-none p-3 rounded-sm text-earth placeholder:text-kraft text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-earth-light mb-2">Teléfono / WhatsApp</label>
+                    <input 
+                      type="tel" 
+                      required
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="999 999 999"
+                      className="w-full bg-offwhite border border-kraft focus:border-nativa outline-none p-3 rounded-sm text-earth placeholder:text-kraft text-sm"
+                    />
+                  </div>
+                </div>
                 <div>
                   <label className="block text-xs uppercase tracking-widest text-earth-light mb-2">Región de Envío</label>
                   <select 
                     value={district}
                     onChange={(e) => setDistrict(e.target.value)}
-                    className="w-full bg-offwhite border border-kraft focus:border-nativa outline-none p-3 rounded-sm text-earth"
+                    className="w-full bg-offwhite border border-kraft focus:border-nativa outline-none p-3 rounded-sm text-earth text-sm"
                   >
                     <option value="lima">Lima Metropolitana</option>
                     <option value="provincia">Provincia</option>

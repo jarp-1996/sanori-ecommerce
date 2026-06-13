@@ -35,9 +35,12 @@
       "properties": {
         "userId": { "type": "string" },
         "customerEmail": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "paymentVerified": { "type": "boolean" },
         "items": { "type": "array" },
         "total": { "type": "number" },
-        "status": { "type": "string", "enum": ["pending", "paid", "shipped", "delivered"] },
+        "status": { "type": "string", "enum": ["pending", "paid", "prepared", "shipped", "delivered"] },
         "paymentMethod": { "type": "string", "enum": ["yape", "card"] },
         "createdAt": { "type": "timestamp" }
       },

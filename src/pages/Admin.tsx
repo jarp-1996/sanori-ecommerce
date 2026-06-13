@@ -28,6 +28,15 @@ import {
   Image as ImageIcon,
   Upload,
   Download,
+  ShoppingBag,
+  Bell,
+  Mail,
+  MailOpen,
+  CheckCircle,
+  Clock,
+  Truck,
+  CreditCard,
+  Check,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSiteSettings } from "../lib/SiteSettingsContext";
@@ -42,9 +51,78 @@ export default function Admin() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "products" | "settings"
+    "overview" | "products" | "settings" | "orders"
   >("overview");
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Orders & Notifications State
+  const [orders, setOrders] = useState<any[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [ordersFilter, setOrdersFilter] = useState<'all' | 'pending' | 'prepared' | 'shipped' | 'delivered'>('all');
+  const [activeOrdersSubTab, setActiveOrdersSubTab] = useState<'list' | 'inbox'>('list');
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("read_order_notifications");
+    if (saved) {
+      setReadNotificationIds(JSON.parse(saved));
+    }
+  }, []);
+
+  const markNotificationAsRead = (orderId: string) => {
+    if (!readNotificationIds.includes(orderId)) {
+      const updated = [...readNotificationIds, orderId];
+      setReadNotificationIds(updated);
+      localStorage.setItem("read_order_notifications", JSON.stringify(updated));
+    }
+  };
+
+  const unreadCount = useMemo(() => {
+    return orders.filter(o => !readNotificationIds.includes(o.id)).length;
+  }, [orders, readNotificationIds]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      const matchSearch = 
+        (o.customerName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (o.customerEmail || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (o.customerPhone || "").includes(searchTerm) ||
+        (o.id || "").toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchFilter = ordersFilter === 'all' ? true : o.status === ordersFilter;
+      return matchSearch && matchFilter;
+    });
+  }, [orders, ordersFilter, searchTerm]);
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(db, "orders", orderId), {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder((prev: any) => prev ? { ...prev, status: newStatus } : null);
+      }
+    } catch (err) {
+      console.error("Error updating order status:", err);
+      alert("No se pudo actualizar el estado del pedido.");
+    }
+  };
+
+  const togglePaymentVerification = async (orderId: string, currentVerified: boolean) => {
+    try {
+      await updateDoc(doc(db, "orders", orderId), {
+        paymentVerified: !currentVerified,
+        updatedAt: serverTimestamp()
+      });
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder((prev: any) => prev ? { ...prev, paymentVerified: !currentVerified } : null);
+      }
+    } catch (err) {
+      console.error("Error updating payment verification:", err);
+      alert("No se pudo actualizar el estado de verificación de pago.");
+    }
+  };
 
   // Form State
   const [name, setName] = useState("");
@@ -186,6 +264,20 @@ export default function Admin() {
       return () => unsubscribe();
     }
   }, [isAdmin, loading, navigate]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      const qOrders = query(collection(db, "orders"), orderBy("createdAt", "desc"));
+      const unsubscribeOrders = onSnapshot(qOrders, (snapshot) => {
+        const fetchedOrders: any[] = [];
+        snapshot.forEach((doc) => {
+          fetchedOrders.push({ id: doc.id, ...doc.data() });
+        });
+        setOrders(fetchedOrders);
+      });
+      return () => unsubscribeOrders();
+    }
+  }, [isAdmin]);
 
   const openForm = (product?: Product) => {
     if (product) {
@@ -382,6 +474,24 @@ export default function Admin() {
               <Package size={20} />{" "}
               <span className="uppercase text-xs tracking-widest">
                 Catálogo
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab("orders")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeTab === "orders"
+                  ? "bg-earth text-offwhite font-medium shadow-md"
+                  : "text-earth hover:bg-mustard/10"
+              }`}
+            >
+              <ShoppingBag size={20} />{" "}
+              <span className="uppercase text-xs tracking-widest flex items-center justify-between w-full">
+                <span>Pedidos</span>
+                {unreadCount > 0 && (
+                  <span className="bg-kraft text-offwhite text-[10px] h-5 min-w-[20px] px-1.5 flex items-center justify-center rounded-full font-bold animate-pulse">
+                    {unreadCount}
+                  </span>
+                )}
               </span>
             </button>
             <button
@@ -807,6 +917,479 @@ export default function Admin() {
                 </div>
               </form>
             </div>
+          </motion.div>
+        )}
+
+        {activeTab === "orders" && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            {/* Tab Header & Quick Navigation */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-3xl font-brand text-earth mb-1">
+                  Control de Pedidos
+                </h2>
+                <p className="text-earth-light text-sm">
+                  Valida pagos, gestiona estados de entrega y revisa alertas de venta gratuitas.
+                </p>
+              </div>
+
+              {/* Sub-tabs: Inbox vs List */}
+              <div className="bg-kraft-light/20 p-1 rounded-xl border border-kraft/20 flex gap-1">
+                <button
+                  onClick={() => setActiveOrdersSubTab('list')}
+                  className={`px-4 py-2 rounded-lg text-xs uppercase tracking-widest font-bold transition-all ${
+                    activeOrdersSubTab === 'list'
+                      ? 'bg-earth text-offwhite shadow-sm'
+                      : 'text-earth hover:bg-earth/5'
+                  }`}
+                >
+                  Gestión de Pedidos
+                </button>
+                <button
+                  onClick={() => setActiveOrdersSubTab('inbox')}
+                  className={`px-4 py-2 rounded-lg text-xs uppercase tracking-widest font-bold transition-all flex items-center gap-2 ${
+                    activeOrdersSubTab === 'inbox'
+                      ? 'bg-earth text-offwhite shadow-sm'
+                      : 'text-earth hover:bg-earth/5'
+                  }`}
+                >
+                  <Bell size={14} className={unreadCount > 0 ? "text-mustard animate-bounce" : ""} />
+                  Buzón de Ventas
+                  {unreadCount > 0 && (
+                    <span className="bg-kraft text-offwhite text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* List Tracking Subtab */}
+            {activeOrdersSubTab === 'list' && (
+              <div className="space-y-6">
+                {/* Search & Status Filters */}
+                <div className="flex flex-col lg:flex-row gap-4 justify-between">
+                  {/* Status buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {(['all', 'pending', 'prepared', 'shipped', 'delivered'] as const).map((filter) => {
+                      const labels = {
+                        all: 'Todos',
+                        pending: 'Por preparar',
+                        prepared: 'Preparado',
+                        shipped: 'Enviado',
+                        delivered: 'Recibido'
+                      };
+                      const active = ordersFilter === filter;
+                      return (
+                        <button
+                          key={filter}
+                          onClick={() => setOrdersFilter(filter)}
+                          className={`px-4 py-2 rounded-full text-xs font-bold transition-all uppercase tracking-wider ${
+                            active
+                              ? 'bg-earth text-offwhite shadow-sm'
+                              : 'bg-offwhite border border-earth/10 text-earth hover:bg-earth/5'
+                          }`}
+                        >
+                          {labels[filter]}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative max-w-sm w-full">
+                    <Search
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-earth/40"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Buscar por cliente, email, fono o ID..."
+                      className="w-full pl-10 pr-4 py-2 border border-earth/10 rounded-xl bg-offwhite outline-none text-sm focus:border-mustard transition-colors text-earth"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Orders Content Table */}
+                <div className="bg-offwhite border border-earth/10 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-background text-earth text-xs uppercase tracking-wider border-b border-earth/10">
+                        <tr>
+                          <th className="p-4 font-medium">Pedido ID</th>
+                          <th className="p-4 font-medium">Cliente</th>
+                          <th className="p-4 font-medium">Pago</th>
+                          <th className="p-4 font-medium">Meteodo / Total</th>
+                          <th className="p-4 font-medium">Estado</th>
+                          <th className="p-4 text-right font-medium">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-earth/5">
+                        {filteredOrders.map((order) => {
+                          const statusInfo = {
+                            pending: { label: "Por preparar", color: "bg-amber-100/70 text-amber-800 border-amber-200" },
+                            prepared: { label: "Preparado", color: "bg-blue-100/70 text-blue-800 border-blue-200" },
+                            shipped: { label: "Enviado", color: "bg-indigo-100/70 text-indigo-800 border-indigo-200" },
+                            delivered: { label: "Recibido", color: "bg-green-100/70 text-green-800 border-green-200" }
+                          };
+                          const currentStatus = (order.status || 'pending') as keyof typeof statusInfo;
+                          const info = statusInfo[currentStatus] || { label: order.status, color: "bg-kraft/10 text-kraft border-kraft/20" };
+
+                          return (
+                            <tr key={order.id} className="hover:bg-mustard/5 transition-colors">
+                              {/* Order ID & Date */}
+                              <td className="p-4">
+                                <button
+                                  onClick={() => {
+                                    setSelectedOrder(order);
+                                    markNotificationAsRead(order.id);
+                                  }}
+                                  className="font-mono text-xs text-earth hover:text-nativa font-medium underline text-left block"
+                                >
+                                  #{order.id.slice(0, 8)}
+                                </button>
+                                <span className="text-[10px] text-earth/50 block mt-0.5">
+                                  {order.createdAt ? new Date(order.createdAt.seconds * 1000).toLocaleString() : 'Reciente'}
+                                </span>
+                              </td>
+
+                              {/* Customer info */}
+                              <td className="p-4">
+                                <span className="font-medium text-earth block">
+                                  {order.customerName || "Compra de Invitado"}
+                                </span>
+                                <span className="text-xs text-earth-light block">
+                                  {order.customerEmail || "Sin email"}
+                                </span>
+                                {order.customerPhone && (
+                                  <a
+                                    href={`https://wa.me/51${order.customerPhone.replace(/[\s\-]/g, '')}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[10px] text-nativa hover:underline font-bold"
+                                    title="Chatear en WhatsApp"
+                                  >
+                                    WhatsApp: {order.customerPhone}
+                                  </a>
+                                )}
+                              </td>
+
+                              {/* Payment Verification */}
+                              <td className="p-4">
+                                <button
+                                  onClick={() => togglePaymentVerification(order.id, !!order.paymentVerified)}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                                    order.paymentVerified
+                                      ? "bg-green-100 text-green-800 border-green-300 hover:bg-green-200"
+                                      : "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                                  }`}
+                                  title="Haz click para cambiar el estado de verificación de pago"
+                                >
+                                  {order.paymentVerified ? (
+                                    <>
+                                      <Check size={12} /> Pago Verificado
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clock size={12} /> Pago Pendiente
+                                    </>
+                                  )}
+                                </button>
+                              </td>
+
+                              {/* Method & Total */}
+                              <td className="p-4 text-earth">
+                                <span className="text-xs font-medium block uppercase tracking-wider">
+                                  {order.paymentMethod === 'yape' ? '⚡ Yape' : '💳 Tarjeta'}
+                                </span>
+                                <span className="font-bold text-sm block mt-0.5">
+                                  S/ {(order.total || 0).toFixed(2)}
+                                </span>
+                              </td>
+
+                              {/* Tracking Status Badge */}
+                              <td className="p-4">
+                                <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border ${info.color}`}>
+                                  {info.label}
+                                </span>
+                              </td>
+
+                              {/* Quick Stage Progression */}
+                              <td className="p-4 text-right">
+                                <div className="inline-flex rounded-md shadow-sm" role="group">
+                                  {currentStatus === 'pending' && (
+                                    <button
+                                      onClick={() => updateOrderStatus(order.id, 'prepared')}
+                                      className="px-3 py-1.5 text-xs bg-earth hover:bg-earth-light text-offwhite rounded-md transition-colors font-semibold"
+                                    >
+                                      Listo para Preparar ➔
+                                    </button>
+                                  )}
+                                  {currentStatus === 'prepared' && (
+                                    <button
+                                      onClick={() => updateOrderStatus(order.id, 'shipped')}
+                                      className="px-3 py-1.5 text-xs bg-nativa hover:bg-nativa-light text-offwhite rounded-md transition-colors font-semibold"
+                                    >
+                                      Marcar como Enviado ➔
+                                    </button>
+                                  )}
+                                  {currentStatus === 'shipped' && (
+                                    <button
+                                      onClick={() => updateOrderStatus(order.id, 'delivered')}
+                                      className="px-3 py-1.5 text-xs bg-green-700 hover:bg-green-600 text-offwhite rounded-md transition-colors font-semibold"
+                                    >
+                                      Marcar como Recibido ✓
+                                    </button>
+                                  )}
+                                  {currentStatus === 'delivered' && (
+                                    <span className="text-xs text-earth/50 italic py-1.5">
+                                      Pedido Completado ✓
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        {filteredOrders.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="p-12 text-center text-earth/60">
+                              {searchTerm
+                                ? "No se encontraron pedidos para tu búsqueda."
+                                : "No hay pedidos con el estado seleccionado."}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sales Alerts Inbox Subtab */}
+            {activeOrdersSubTab === 'inbox' && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* List of custom letters (alerts) */}
+                <div className="md:col-span-1 bg-offwhite border border-earth/10 rounded-2xl p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+                  <h3 className="font-serif text-lg text-earth border-b border-earth/10 pb-2 mb-2 flex items-center justify-between">
+                    <span>Buzón del Propietario</span>
+                    <span className="text-xs text-earth-light font-sans">{orders.length} alertas</span>
+                  </h3>
+
+                  {orders.map((order) => {
+                    const isRead = readNotificationIds.includes(order.id);
+                    const formattedDate = order.createdAt
+                      ? new Date(order.createdAt.seconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                      : 'Hoy';
+
+                    return (
+                      <button
+                        key={order.id}
+                        onClick={() => {
+                          setSelectedOrder(order);
+                          markNotificationAsRead(order.id);
+                        }}
+                        className={`w-full text-left p-3.5 rounded-xl border transition-all flex flex-col gap-1.5 ${
+                          selectedOrder?.id === order.id
+                            ? 'bg-nativa/10 border-nativa shadow-sm'
+                            : isRead
+                              ? 'bg-offwhite border-earth/5 hover:bg-mustard/5'
+                              : 'bg-mustard/10 border-mustard/30 shadow-xs'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center w-full">
+                          <span className={`text-xs uppercase tracking-widest font-bold text-earth ${!isRead ? 'font-black text-nativa' : ''}`}>
+                            {order.customerName || "Compra de Invitado"}
+                          </span>
+                          <span className="text-[10px] text-earth-light">
+                            {formattedDate}
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-semibold text-earth truncate">
+                          {!isRead && <span className="inline-block w-2 h-2 bg-kraft rounded-full mr-1.5 animate-ping" />}
+                          🌿 ¡Nueva venta! S/ {(order.total || 0).toFixed(2)} [{(order.paymentMethod || 'yape').toUpperCase()}]
+                        </div>
+
+                        <div className="text-[11px] text-earth/60 line-clamp-1">
+                          Dirección: {order.shippingInfo?.address || 'Sin dirección'}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {orders.length === 0 && (
+                    <div className="text-center py-12 text-earth/50 text-sm">
+                      Limpio. No hay alertas de compra recibidas aún.
+                    </div>
+                  )}
+                </div>
+
+                {/* Simulated Email Detail Panel */}
+                <div className="md:col-span-2 bg-offwhite border border-earth/10 rounded-2xl overflow-hidden shadow-sm flex flex-col h-[70vh]">
+                  {selectedOrder ? (
+                    <div className="flex flex-col h-full">
+                      {/* Header resembling an email header */}
+                      <div className="p-6 bg-background border-b border-earth/10">
+                        <div className="flex justify-between items-start mb-4">
+                          <h4 className="text-lg font-serif text-earth">
+                            Asunto: 🌿 ¡Nueva venta recibida de Sánori! - S/ {(selectedOrder.total || 0).toFixed(2)} por {selectedOrder.customerName || "Invitado"}
+                          </h4>
+                          <span className="text-xs bg-kraft/10 text-kraft font-mono border border-kraft/20 px-2.5 py-1 rounded">
+                            ID: {selectedOrder.id}
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5 text-xs text-earth/80 font-sans">
+                          <div>
+                            <strong className="text-earth">De:</strong> Sánori Tienda &lt;alertas@sanori.com&gt;
+                          </div>
+                          <div>
+                            <strong className="text-earth">Para:</strong> Propietario de Sánori &lt;{user?.email || 'admin@sanori.com'}&gt;
+                          </div>
+                          <div>
+                            <strong className="text-earth">Fecha:</strong> {selectedOrder.createdAt ? new Date(selectedOrder.createdAt.seconds * 1000).toLocaleString() : 'Recente'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Mock Email Contents */}
+                      <div className="p-6 overflow-y-auto flex-1 space-y-6 text-earth font-sans text-sm">
+                        <div className="bg-kraft-light/20 p-4 border border-kraft/30 rounded-sm">
+                          <p className="font-serif text-base text-earth mb-2">🌿 ¡Hola, Sánori!</p>
+                          <p className="text-earth-light">
+                            Buenas noticias. Tu tienda en línea acaba de recibir un nuevo pedido. A continuación se detallan los datos del cliente y los productos solicitados para que puedas verificar el pago y procesar la preparación.
+                          </p>
+                        </div>
+
+                        {/* Customer Information Section */}
+                        <div>
+                          <h5 className="font-serif text-md text-earth border-b border-earth/10 pb-2 mb-3 uppercase tracking-wider text-xs">
+                            Datos del Cliente para Verificación
+                          </h5>
+                          <div className="grid grid-cols-2 gap-4 text-xs">
+                            <div>
+                              <strong className="block text-earth-light mb-1">Nombre Completo:</strong>
+                              <p className="font-medium text-earth">{selectedOrder.customerName || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <strong className="block text-earth-light mb-1">Email de Registro:</strong>
+                              <p className="font-medium text-earth">{selectedOrder.customerEmail || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <strong className="block text-earth-light mb-1">Teléfono / WhatsApp:</strong>
+                              <p className="font-medium text-earth">{selectedOrder.customerPhone || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <strong className="block text-earth-light mb-1">Método de Pago Seleccionado:</strong>
+                              <p className="font-medium uppercase text-earth">{selectedOrder.paymentMethod || 'N/A'}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Shipping details */}
+                        <div>
+                          <h5 className="font-serif text-md text-earth border-b border-earth/10 pb-2 mb-3 uppercase tracking-wider text-xs">
+                            Detalles de Envío
+                          </h5>
+                          <div className="text-xs">
+                            <strong className="block text-earth-light mb-1">Destino:</strong>
+                            <p className="font-medium inline-block bg-earth/5 border border-earth/10 px-2 py-1 rounded text-earth uppercase tracking-widest text-[10px] mb-2">
+                              {selectedOrder.shippingInfo?.district === 'lima' ? 'Lima Metropolitana' : 'Provincia'}
+                            </p>
+                            <p className="font-medium text-earth">Dirección: {selectedOrder.shippingInfo?.address || 'N/A'}</p>
+                          </div>
+                        </div>
+
+                        {/* Order Items Table */}
+                        <div>
+                          <h5 className="font-serif text-md text-earth border-b border-earth/10 pb-2 mb-3 uppercase tracking-wider text-xs">
+                            Carro de Compra
+                          </h5>
+                          <div className="space-y-2">
+                            {selectedOrder.items?.map((item: any, i: number) => (
+                              <div key={i} className="flex justify-between items-center bg-background/50 border border-earth/5 p-3 rounded-lg text-xs">
+                                <div className="flex items-center gap-3">
+                                  {item.imageUrl && (
+                                    <img src={item.imageUrl} alt={item.name} className="w-10 h-10 object-cover rounded border border-earth/5" />
+                                  )}
+                                  <div>
+                                    <p className="font-medium text-earth">{item.name}</p>
+                                    <p className="text-[10px] text-earth-light">Cantidad: {item.quantity} | S/ {item.price.toFixed(2)} c/u</p>
+                                  </div>
+                                </div>
+                                <span className="font-bold text-earth">S/ {(item.price * item.quantity).toFixed(2)}</span>
+                              </div>
+                            ))}
+                            <div className="pt-3 border-t border-earth/10 flex justify-between font-bold text-sm text-earth">
+                              <span>Total con Envío</span>
+                              <span>S/ {(selectedOrder.total || 0).toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Quick Control Inside Email */}
+                        <div className="bg-mustard/10 p-5 rounded-xl border border-mustard/30 space-y-4">
+                          <p className="text-xs font-bold uppercase tracking-widest text-earth">
+                            Acciones de Verificación Directa:
+                          </p>
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              onClick={() => togglePaymentVerification(selectedOrder.id, !!selectedOrder.paymentVerified)}
+                              className={`px-4 py-2 text-xs rounded-full font-bold uppercase tracking-wider transition-all border ${
+                                selectedOrder.paymentVerified
+                                  ? 'bg-green-700 text-offwhite border-green-800'
+                                  : 'bg-earth text-offwhite border-earth'
+                              }`}
+                            >
+                              {selectedOrder.paymentVerified ? '✓ Pago Verificado' : '⚙ Marcar Pago Verificado'}
+                            </button>
+
+                            {selectedOrder.customerPhone && (
+                              <a
+                                href={`https://wa.me/51${selectedOrder.customerPhone.replace(/[\s\-]/g, '')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-4 py-2 bg-nativa hover:bg-nativa-light text-offwhite rounded-full text-xs font-bold uppercase tracking-wider transition-all"
+                              >
+                                Contactar por WhatsApp
+                              </a>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                updateOrderStatus(selectedOrder.id, 'prepared');
+                                alert("Pedido marcado como 'Preparado'. Ha avanzado a la etapa siguiente.");
+                              }}
+                              disabled={selectedOrder.status !== 'pending'}
+                              className="px-4 py-2 border border-earth text-earth hover:bg-earth/5 disabled:opacity-50 text-xs font-bold uppercase tracking-wider rounded-full"
+                            >
+                              Preparado para Despacho
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="m-auto text-center p-8 text-earth/50 space-y-3">
+                      <Mail size={48} className="mx-auto text-earth/20" />
+                      <div>
+                        <p className="font-serif text-lg">Buzón de Notificaciones de Sánori</p>
+                        <p className="text-xs text-earth-light">Selecciona una alerta de compra de la lista para ver el correo de detalles.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </main>
