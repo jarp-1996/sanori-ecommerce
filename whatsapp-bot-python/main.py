@@ -159,6 +159,8 @@ async def get_dashboard():
     elif bot_state["status"] == "qr_needed":
         status_color = "text-red-600 font-bold animate-pulse"
         
+    qr_value = urllib.parse.quote(str(bot_state["qr_data"] or ''))
+    
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -187,12 +189,12 @@ async def get_dashboard():
                     </div>
                 </div>
 
-                {'''
+                {f'''
                 <div class="bg-yellow-50 border border-yellow-200 p-6 rounded-xl flex flex-col items-center justify-center space-y-4">
                     <p class="text-xs font-bold text-yellow-800 uppercase tracking-widest">⚠️ Código QR Requerido</p>
                     <p class="text-xs text-yellow-700 text-center max-w-md">Para habilitar los envíos automatizados de Sánori, abre WhatsApp en tu smartphone, ve a Dispositivos Vinculados y escanea el código siguiente:</p>
                     <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-md">
-                        <img src="/qr?cache_breaker={}" alt="Código QR Sánori" class="w-64 h-64">
+                        <img src="/qr?cache_breaker={qr_value}" alt="Código QR Sánori" class="w-64 h-64">
                     </div>
                     <span class="text-[10px] text-gray-400">La imagen se actualiza automáticamente al detectar cambios.</span>
                 </div>
@@ -263,7 +265,7 @@ async def get_dashboard():
         </footer>
     </body>
     </html>
-    """.format(urllib.parse.quote(str(bot_state["qr_data"] or '')))
+    """
     return html_content
 
 
