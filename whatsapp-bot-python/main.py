@@ -57,7 +57,7 @@ async def monitor_whatsapp_status():
         context = await pw.chromium.launch_persistent_context(
             user_data_dir=USER_DATA_DIR,
             headless=True,
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
             args=[
                 "--no-sandbox",
@@ -65,7 +65,8 @@ async def monitor_whatsapp_status():
                 "--disable-dev-shm-usage",
                 "--disable-accelerated-2d-canvas",
                 "--disable-gpu",
-                "--disable-extensions"
+                "--disable-extensions",
+                "--disable-blink-features=AutomationControlled"
             ]
         )
         pw_resources["browser_context"] = context
@@ -73,6 +74,9 @@ async def monitor_whatsapp_status():
         # Abrir pestaña principal
         page = context.pages[0] if context.pages else await context.new_page()
         pw_resources["page"] = page
+        
+        # Ocultar el webdriver de Playwright para evitar bloqueos
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
         # Ir a WhatsApp Web
         print("🔗 Accediendo a WhatsApp Web (https://web.whatsapp.com)...")
