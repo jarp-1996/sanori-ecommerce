@@ -246,14 +246,14 @@ async def get_dashboard():
                 </div>
                 
                 <script>
-                    function refreshScreenshot() {
+                    function refreshScreenshot() {{
                         const img = document.getElementById('live-screenshot');
                         const loader = document.getElementById('screenshot-loader-text');
                         img.classList.add('hidden');
                         loader.innerText = 'Cargando captura actual...';
                         loader.style.display = 'block';
                         img.src = '/screenshot?t=' + Date.now();
-                    }
+                    }}
                 </script>
             </div>
         </main>
