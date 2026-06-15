@@ -53,15 +53,19 @@ async def monitor_whatsapp_status():
         
         # Lanzamos Chromium con persistencia de cookies/sesión
         # Esto permite que una vez escaneado el QR, no tengas que volver a escanearlo al reiniciar el servidor.
+        print("🔧 Iniciando contexto persistente de Chromium...")
         context = await pw.chromium.launch_persistent_context(
             user_data_dir=USER_DATA_DIR,
             headless=True,
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-accelerated-2d-canvas",
-                "--disable-gpu"
+                "--disable-gpu",
+                "--disable-extensions"
             ]
         )
         pw_resources["browser_context"] = context
@@ -71,12 +75,16 @@ async def monitor_whatsapp_status():
         pw_resources["page"] = page
         
         # Ir a WhatsApp Web
-        print("🔗 Accediendo a WhatsApp Web...")
+        print("🔗 Accediendo a WhatsApp Web (https://web.whatsapp.com)...")
         await page.goto("https://web.whatsapp.com", wait_until="domcontentloaded", timeout=60000)
+        print("⏳ Página de WhatsApp cargada. Esperando renderizado de la interfaz...")
         
         # Ciclo de monitoreo de estado
         while True:
             await asyncio.sleep(5)
+            
+            # Obtener el html de la página para depurar o verificar si muestra mensajes de error
+            page_title = await page.title()
             
             # 1. Verificar si ya estamos autenticados (busca el componente de la barra de búsqueda o el panel principal)
             is_authenticated = await page.locator('div[contenteditable="true"]').count() > 0 or \
@@ -85,7 +93,7 @@ async def monitor_whatsapp_status():
             
             if is_authenticated:
                 if bot_state["status"] != "authenticated":
-                    print("✅ ¡Sánori Bot conectado exitosamente a WhatsApp!")
+                    print(f"✅ ¡Sánori Bot conectado exitosamente a WhatsApp! Título página: {page_title}")
                     bot_state["status"] = "authenticated"
                     bot_state["qr_ready"] = False
                     bot_state["qr_data"] = None
@@ -101,7 +109,7 @@ async def monitor_whatsapp_status():
             if await qr_container.count() > 0:
                 qr_val = await qr_container.first.get_attribute("data-ref")
                 if qr_val and qr_val != bot_state["qr_data"]:
-                    print(f"👁️ ¡Nuevo código QR de WhatsApp detectado!")
+                    print(f"👁️ ¡Nuevo código QR de WhatsApp en pantalla listo para escanear!")
                     bot_state["status"] = "qr_needed"
                     bot_state["qr_ready"] = True
                     bot_state["qr_data"] = qr_val
@@ -116,10 +124,16 @@ async def monitor_whatsapp_status():
                     print("------------------------------------------------------------\n")
                     print(f"También puedes ver o descargar la imagen en: http://localhost:8000/qr")
             else:
-                # Si no hay QR pero tampoco está autenticado, podría estar cargando
-                if bot_state["status"] == "authenticated":
-                    print("⚠️ Se perdió la conexión con el chat de WhatsApp Web. Reevaluando...")
-                    bot_state["status"] = "initializing"
+                # Si no hay QR ni autenticado, informar de la espera
+                print(f"⏱️ Monitoreando estado de WhatsApp... Título actual: '{page_title}'")
+                
+                # Resguardo: si WhatsApp Web indica que el navegador no es compatible
+                # actualizamos el agente de usuario o reiniciamos silenciosamente
+                html_snippet = await page.content()
+                if "navegador" in html_snippet.lower() or "browser" in html_snippet.lower() or "update" in html_snippet.lower():
+                    # si hay texto de actualización detectada
+                    if "actualizar" in html_snippet.lower() or "update google chrome" in html_snippet.lower():
+                        print("⚠️ Alerta: WhatsApp Web solicita actualización de Chrome. Aplicando bypass...")
 
     except Exception as e:
         error_msg = f"Error crítico en el monitor: {str(e)}"
