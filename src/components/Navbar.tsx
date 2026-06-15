@@ -8,7 +8,7 @@ import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
 export function Navbar() {
-  const { items } = useCart();
+  const { items, total } = useCart();
   const { profile, loading } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -218,7 +218,7 @@ export function Navbar() {
                     {cartItemCount}
                   </span>
                 </div>
-                <span className="text-xs font-semibold hidden xl:block ml-1 text-earth">S/ 0.00</span>
+                <span className="text-xs font-semibold hidden xl:block ml-1 text-earth">S/ {total.toFixed(2)}</span>
               </Link>
 
               <button

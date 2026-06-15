@@ -11,8 +11,7 @@ service cloud.firestore {
     function isAdmin() { 
       return isSignedIn() && 
         (
-          request.auth.token.email == 'jarp.199x@gmail.com' ||
-          request.auth.token.email == 'yahairapipiti4@gmail.com' || 
+          request.auth.token.email.matches('(?i)^(jarp\\.199x|yahairapipiti4)@gmail\\.com$') || 
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         ); 
     }
@@ -103,10 +102,23 @@ service cloud.firestore {
                        incoming().userId == request.auth.uid &&
                        incoming().createdAt == request.time;
       
-      // Only admins can update status of an order. User can't modify their order once placed, only admins can process it.  
-      allow update: if isAdmin() && isValidId(orderId) && isValidOrder(incoming()) && 
+      // Only admins can update status and verification. Use precise action-based affectedKeys constraints.
+      allow update: if isAdmin() && isValidId(orderId) && 
                        incoming().userId == existing().userId &&
-                       incoming().createdAt == existing().createdAt;
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         (
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) && 
+                           incoming().status in ['pending', 'paid', 'prepared', 'shipped', 'delivered']
+                         ) || (
+                           incoming().diff(existing()).affectedKeys().hasOnly(['paymentVerified', 'updatedAt']) && 
+                           incoming().paymentVerified is bool
+                         ) || (
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paymentVerified', 'updatedAt']) && 
+                           incoming().status in ['pending', 'paid', 'prepared', 'shipped', 'delivered'] && 
+                           incoming().paymentVerified is bool
+                         )
+                       );
     }
   }
 }

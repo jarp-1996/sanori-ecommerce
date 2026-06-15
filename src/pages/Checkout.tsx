@@ -4,11 +4,14 @@ import { useAuth } from '../lib/firebase';
 import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
+import { Copy, Check, MessageSquare } from 'lucide-react';
+import { useSiteSettings } from '../lib/SiteSettingsContext';
 
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const { settings } = useSiteSettings();
 
   const [paymentMethod, setPaymentMethod] = useState<'yape' | 'card'>('yape');
   const [district, setDistrict] = useState('lima');
@@ -17,6 +20,16 @@ export default function Checkout() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [processing, setProcessing] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [completedOrder, setCompletedOrder] = useState<{
+    id: string;
+    total: number;
+    paymentMethod: 'yape' | 'card';
+    customerName: string;
+    customerPhone: string;
+    items: any[];
+    shippingInfo: { district: string; address: string };
+  } | null>(null);
 
   React.useEffect(() => {
     if (user) {
@@ -39,7 +52,8 @@ export default function Checkout() {
 
     try {
       const orderRef = doc(collection(db, 'orders'));
-      await setDoc(orderRef, {
+      const orderId = orderRef.id;
+      const orderData = {
         userId: user.uid,
         customerEmail: user.email,
         customerName: customerName,
@@ -51,6 +65,83 @@ export default function Checkout() {
         paymentMethod: paymentMethod,
         shippingInfo: { district, address },
         createdAt: serverTimestamp()
+      };
+      
+      await setDoc(orderRef, orderData);
+
+      // Si las notificaciones de Telegram están activas, enviar la alerta por bot
+      if (settings?.telegramEnabled && settings?.telegramBotToken && settings?.telegramChatId) {
+        try {
+          const messageText = `🌿 *¡Nueva compra recibida en Sánori!* 🌿\n\n` +
+            `*ID del Pedido:* \`${orderId}\`\n` +
+            `*Cliente:* ${customerName}\n` +
+            `*Contacto:* ${customerPhone} (${user.email || 'No proporcionado'})\n` +
+            `*Método:* ${paymentMethod === 'yape' ? 'Yape 🟣' : 'Tarjeta de Crédito/Débito 💳'}\n` +
+            `*Destino:* ${address} (${district === 'lima' ? 'Lima Metropolitana' : 'Provincia'})\n` +
+            `*Total:* S/ ${finalTotal.toFixed(2)}\n\n` +
+            `*Detalles del pedido:*\n` +
+            items.map(item => `- ${item.name} (x${item.quantity}) - S/ ${(item.price * item.quantity).toFixed(2)}`).join('\n');
+
+          const telegramUrl = `https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`;
+          
+          fetch(telegramUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: settings.telegramChatId,
+              text: messageText,
+              parse_mode: 'Markdown'
+            })
+          }).catch(err => console.error("Error enviando notificación a Telegram:", err));
+        } catch (teleError) {
+          console.error("Error al construir el mensaje de Telegram:", teleError);
+        }
+      }
+
+      // Si las notificaciones de WhatsApp Automatizadas están activas, enviar la alerta al cliente
+      if (settings?.whatsappEnabled && settings?.whatsappApiUrl) {
+        try {
+          const clientMessageText = `🌿 *Sánori - Compra Recibida* 🌿\n\n` +
+            `¡Hola *${customerName}*! Muchas gracias por tu compra en Sánori.\n\n` +
+            `*ID de tu Pedido:* \`${orderId}\`\n` +
+            `*Total a pagar:* S/ ${finalTotal.toFixed(2)}\n` +
+            `*Método:* ${paymentMethod === 'yape' ? 'Yape (Recuerda enviar tu captura por aquí)' : 'Tarjeta de Crédito/Débito'}\n` +
+            `*Dirección:* ${address} (${district === 'lima' ? 'Lima Metropolitana' : 'Provincia'})\n\n` +
+            `*Detalles del pedido:*\n` +
+            items.map(item => `- ${item.name} (${item.quantity} un.)`).join('\n') + `\n\n` +
+            `Estamos preparando todo con mucho cariño. ¡Gracias por apostar por la cosmética viva! 🌸`;
+
+          // Formatear teléfono
+          let cleanPhone = customerPhone.replace(/\D/g, '');
+          if (cleanPhone.length === 9) {
+            cleanPhone = '51' + cleanPhone; // Prefijo de Perú por defecto
+          }
+
+          const whatsappBody = {
+            number: cleanPhone,
+            message: clientMessageText,
+            token: settings.whatsappToken || '',
+            session: settings.whatsappSession || 'sanori'
+          };
+          
+          fetch(settings.whatsappApiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(whatsappBody)
+          }).catch(err => console.error("Error enviando notificación WhatsApp:", err));
+        } catch (wsError) {
+          console.error("Error al construir mensaje de WhatsApp:", wsError);
+        }
+      }
+
+      setCompletedOrder({
+        id: orderId,
+        total: finalTotal,
+        paymentMethod: paymentMethod,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        items: [...items],
+        shippingInfo: { district, address }
       });
 
       clearCart();
@@ -63,17 +154,108 @@ export default function Checkout() {
     }
   };
 
-  if (orderComplete) {
+  const handleCopyId = () => {
+    if (completedOrder) {
+      navigator.clipboard.writeText(completedOrder.id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const getWhatsAppMessage = () => {
+    if (!completedOrder) return '';
+    const itemsText = completedOrder.items.map(item => `- ${item.name} (x${item.quantity})`).join('\n');
+    const message = `¡Hola Sánori! Acabo de realizar mi compra.\n\n*ID del Pedido:* ${completedOrder.id}\n*Total:* S/ ${completedOrder.total.toFixed(2)}\n*Método:* ${completedOrder.paymentMethod === 'yape' ? 'Yape' : 'Tarjeta'}\n\n*Detalles del Pedido:*\n${itemsText}\n\n*Envío:* ${completedOrder.shippingInfo.address} (${completedOrder.shippingInfo.district === 'lima' ? 'Lima' : 'Provincia'})\n*Cliente:* ${completedOrder.customerName}\n*Contacto:* ${completedOrder.customerPhone}\n\nAquí adjunto mi captura de pantalla del pago.`;
+    return encodeURIComponent(message);
+  };
+
+  if (orderComplete && completedOrder) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-24 text-center">
-        <div className="w-20 h-20 bg-nativa text-offwhite rounded-full flex items-center justify-center mx-auto mb-6">
-          <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+      <div className="max-w-3xl mx-auto px-4 py-16 animate-in fade-in">
+        <div className="bg-kraft-light/25 border border-kraft rounded-md p-8 md:p-12 text-center shadow-sm">
+          <div className="w-20 h-20 bg-nativa text-offwhite rounded-full flex items-center justify-center mx-auto mb-6">
+            <Check className="w-10 h-10" />
+          </div>
+          <h1 className="text-3xl font-serif text-earth mb-2">¡Pedido Recibido Exitosamente!</h1>
+          <p className="text-earth-light mb-8 max-w-lg mx-auto">Gracias por tu compra consciente y natural en Sánori. Tu orden ha sido registrada en nuestro sistema.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left border-y border-kraft/60 py-8 my-8">
+            <div>
+              <h3 className="font-serif text-earth text-lg mb-3">Información de Pedido</h3>
+              <div className="space-y-2 text-sm text-earth-light">
+                <p className="flex items-center gap-2">
+                  <span className="font-medium text-earth">ID:</span> 
+                  <span className="font-mono bg-offwhite px-2 py-0.5 rounded border border-kraft/50 text-xs">
+                    {completedOrder.id}
+                  </span>
+                  <button onClick={handleCopyId} className="hover:text-nativa transition" title="Copiar ID">
+                    {copied ? <Check className="w-4 h-4 text-nativa" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </p>
+                <p><span className="font-medium text-earth">Método de Pago:</span> <span className="capitalize">{completedOrder.paymentMethod}</span></p>
+                <p><span className="font-medium text-earth">Total del Pedido:</span> S/ {completedOrder.total.toFixed(2)}</p>
+                <p><span className="font-medium text-earth">Destino:</span> {completedOrder.shippingInfo.address} ({completedOrder.shippingInfo.district === 'lima' ? 'Lima' : 'Provincia'})</p>
+              </div>
+            </div>
+
+            <div>
+              {completedOrder.paymentMethod === 'yape' ? (
+                <div className="bg-nativa/5 border border-nativa/30 rounded p-4">
+                  <h3 className="font-serif text-nativa text-base font-bold mb-2 flex items-center gap-2">
+                    🟣 Instrucciones de Pago Yape
+                  </h3>
+                  <ol className="text-xs text-earth-light space-y-2 list-decimal list-inside">
+                    <li>Abre tu aplicación Yape.</li>
+                    <li>Saca captura o yapea directamente al número: <strong className="text-earth font-mono">999 999 999</strong></li>
+                    <li>Envíanos tu comprobante por WhatsApp presionando el botón de abajo. ¡Listo!</li>
+                  </ol>
+                  
+                  <a 
+                    href={`https://wa.me/51999999999?text=${getWhatsAppMessage()}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 flex items-center justify-center gap-2 w-full bg-[#25D366] hover:bg-[#128C7E] text-white py-2 px-4 rounded-sm font-medium transition text-xs uppercase tracking-wider"
+                  >
+                    <MessageSquare className="w-4 h-4" /> Enviar Comprobante por WhatsApp
+                  </a>
+                </div>
+              ) : (
+                <div className="bg-earth/5 border border-earth/20 rounded p-4">
+                  <h3 className="font-serif text-earth text-sm font-bold mb-1">
+                    💳 Transacción con Tarjeta
+                  </h3>
+                  <p className="text-xs text-earth-light leading-relaxed mb-3">
+                    Tu pago con tarjeta ha sido registrado. Validaremos la transacción bancaria de inmediato y procederemos con la elaboración/empaquetado de tu pedido.
+                  </p>
+                  <p className="text-xs text-kraft accent-nativa">
+                    No necesitas realizar ninguna acción adicional. Nos comunicaremos contigo directamente de ser necesario.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="text-left bg-offwhite/50 border border-kraft/45 rounded p-4 mb-8">
+            <h4 className="font-serif text-earth text-sm mb-3 font-bold">Resumen de Productos</h4>
+            <div className="divide-y divide-kraft/20 max-h-40 overflow-y-auto">
+              {completedOrder.items.map((item, idx) => (
+                <div key={idx} className="flex justify-between py-2 text-xs">
+                  <span className="text-earth-light">{item.name} <strong className="text-kraft">x{item.quantity}</strong></span>
+                  <span className="font-medium text-earth">S/ {(item.price * item.quantity).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button onClick={() => navigate('/tienda')} className="bg-earth hover:bg-earth-light text-offwhite px-8 py-3 rounded-sm uppercase tracking-widest text-xs transition">
+              Volver a la Tienda
+            </button>
+            <button onClick={() => navigate('/')} className="bg-transparent border border-kraft text-earth hover:bg-kraft/10 px-8 py-3 rounded-sm uppercase tracking-widest text-xs transition">
+              Ir al Inicio
+            </button>
+          </div>
         </div>
-        <h1 className="text-3xl font-serif text-earth mb-4">¡Pedido Recibido!</h1>
-        <p className="text-earth-light mb-8">Gracias por tu compra consciente. Procesaremos tu pedido en breve y lo enviaremos con el mayor cuidado.</p>
-        <button onClick={() => navigate('/tienda')} className="bg-earth text-offwhite px-8 py-3 rounded-sm uppercase tracking-widest text-sm">
-          Volver a la Tienda
-        </button>
       </div>
     );
   }

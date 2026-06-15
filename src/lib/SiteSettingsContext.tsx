@@ -6,6 +6,13 @@ export interface SiteSettings {
   heroImageUrl?: string;
   aboutImageUrl?: string;
   innovateImageUrl?: string;
+  telegramEnabled?: boolean;
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  whatsappEnabled?: boolean;
+  whatsappApiUrl?: string;
+  whatsappToken?: string;
+  whatsappSession?: string;
 }
 
 interface SiteSettingsContextType {

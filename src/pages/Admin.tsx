@@ -103,24 +103,93 @@ export default function Admin() {
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder((prev: any) => prev ? { ...prev, status: newStatus } : null);
       }
-    } catch (err) {
+
+      // Notificar automáticamente por WhatsApp si la API autohospedada está activa
+      if (settings?.whatsappEnabled && settings?.whatsappApiUrl) {
+        const orderData = orders.find(o => o.id === orderId);
+        if (orderData && orderData.customerPhone) {
+          let statusLabel = "";
+          let advice = "";
+          if (newStatus === "prepared") {
+            statusLabel = "PREPARADO 📦";
+            advice = "Hemos verificado tus detalles y nuestros artesanos ya comenzaron a preparar tu lote con insumos botánicos frescos de esta temporada.";
+          } else if (newStatus === "shipped") {
+            statusLabel = "DSPACHADO & EN CAMINO 🚚";
+            advice = "Tu pedido ya se encuentra bajo la responsabilidad de nuestro courier y está rumbo a tu dirección de destino. ¡Esperamos que lo disfrutes mucho!";
+          } else if (newStatus === "completed") {
+            statusLabel = "ENTREGADO 🎉";
+            advice = "¡Tu pedido ha sido marcado como entregado exitosamente! Nos encantaría saber tu opinión sobre tu nueva rutina de bienestar.";
+          }
+
+          if (statusLabel) {
+            const clientMessageText = `🌿 *Sánori - Actualización de tu Pedido* 🌿\n\n` +
+              `¡Hola *${orderData.customerName}*! Tu pedido de Sánori con ID \`${orderId}\` ha cambiado de estado.\n\n` +
+              `*Nuevo Estado:* ${statusLabel}\n\n` +
+              `${advice}\n\n` +
+              `Cualquier consulta adicional puedes escribirnos por este medio. ¡Muchas gracias por tu amor a lo natural!`;
+
+            let cleanPhone = orderData.customerPhone.replace(/\D/g, "");
+            if (cleanPhone.length === 9) {
+              cleanPhone = "51" + cleanPhone;
+            }
+
+            fetch(settings.whatsappApiUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                number: cleanPhone,
+                message: clientMessageText,
+                token: settings.whatsappToken || "",
+                session: settings.whatsappSession || "sanori"
+              })
+            }).catch(e => console.error("Error al disparar notificación de WhatsApp:", e));
+          }
+        }
+      }
+    } catch (err: any) {
       console.error("Error updating order status:", err);
-      alert("No se pudo actualizar el estado del pedido.");
+      alert("No se pudo actualizar el estado del pedido: " + (err?.message || String(err)));
     }
   };
 
   const togglePaymentVerification = async (orderId: string, currentVerified: boolean) => {
     try {
+      const nextVerified = !currentVerified;
       await updateDoc(doc(db, "orders", orderId), {
-        paymentVerified: !currentVerified,
+        paymentVerified: nextVerified,
         updatedAt: serverTimestamp()
       });
       if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder((prev: any) => prev ? { ...prev, paymentVerified: !currentVerified } : null);
+        setSelectedOrder((prev: any) => prev ? { ...prev, paymentVerified: nextVerified } : null);
       }
-    } catch (err) {
+
+      // Notificar automáticamente cuando se marque verificado (pagado)
+      if (nextVerified && settings?.whatsappEnabled && settings?.whatsappApiUrl) {
+        const orderData = orders.find(o => o.id === orderId);
+        if (orderData && orderData.customerPhone) {
+          const clientMessageText = `🌿 *Sánori - ¡Pago Verificado!* ✅\n\n` +
+            `¡Hola *${orderData.customerName}*!\n\nHemos verificado correctamente tu comprobante por un valor de *S/ ${(orderData.total || 0).toFixed(2)}* para el ID de pedido \`${orderId}\`.\n\nTu orden ha avanzado a la cola de preparación en nuestro taller artesanal. Te notificaremos de inmediato en cuanto sea despachado. ¡Gracias por confiar en Sánori! 🌸`;
+
+          let cleanPhone = orderData.customerPhone.replace(/\D/g, "");
+          if (cleanPhone.length === 9) {
+            cleanPhone = "51" + cleanPhone;
+          }
+
+          fetch(settings.whatsappApiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              number: cleanPhone,
+              message: clientMessageText,
+              token: settings.whatsappToken || "",
+              session: settings.whatsappSession || "sanori"
+            })
+          }).catch(e => console.error("Error al disparar WhatsApp de Pago Verificado:", e));
+        }
+      }
+    } catch (err: any) {
       console.error("Error updating payment verification:", err);
-      alert("No se pudo actualizar el estado de verificación de pago.");
+      alert("No se pudo actualizar el estado de verificación de pago: " + (err?.message || String(err)));
     }
   };
 
@@ -237,6 +306,13 @@ export default function Admin() {
   const [heroImage, setHeroImage] = useState("");
   const [aboutImage, setAboutImage] = useState("");
   const [innovateImage, setInnovateImage] = useState("");
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramBotToken, setTelegramBotToken] = useState("");
+  const [telegramChatId, setTelegramChatId] = useState("");
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [whatsappApiUrl, setWhatsappApiUrl] = useState("");
+  const [whatsappToken, setWhatsappToken] = useState("");
+  const [whatsappSession, setWhatsappSession] = useState("sanori");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   useEffect(() => {
@@ -244,8 +320,91 @@ export default function Admin() {
       setHeroImage(settings.heroImageUrl || "");
       setAboutImage(settings.aboutImageUrl || "");
       setInnovateImage(settings.innovateImageUrl || "");
+      setTelegramEnabled(!!settings.telegramEnabled);
+      setTelegramBotToken(settings.telegramBotToken || "");
+      setTelegramChatId(settings.telegramChatId || "");
+      setWhatsappEnabled(!!settings.whatsappEnabled);
+      setWhatsappApiUrl(settings.whatsappApiUrl || "");
+      setWhatsappToken(settings.whatsappToken || "");
+      setWhatsappSession(settings.whatsappSession || "sanori");
     }
   }, [settings]);
+
+  const testTelegramMessage = async () => {
+    if (!telegramBotToken || !telegramChatId) {
+      alert("Por favor ingresa un Token de Bot y un Chat ID primero.");
+      return;
+    }
+    try {
+      const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: telegramChatId,
+          text: "🌿 *Sánori - Compra Consciente*\n\n¡Prueba exitosa! Este es un mensaje de prueba de tu sistema de ventas para recibir las compras en tiempo real.",
+          parse_mode: "Markdown"
+        })
+      });
+      if (response.ok) {
+        alert("¡Mensaje de prueba enviado! Revisa tu chat en Telegram.");
+      } else {
+        const data = await response.json();
+        alert(`Error al enviar: ${data.description || "Verifica las credenciales"}`);
+      }
+    } catch (err: any) {
+      alert(`Error al enviar: ${err.message || String(err)}`);
+    }
+  };
+
+  const testWhatsappMessage = async () => {
+    if (!whatsappApiUrl) {
+      alert("Por favor ingresa la URL de tu API de WhatsApp primero.");
+      return;
+    }
+    const testNum = prompt("Ingresa el número de teléfono para la prueba (con código de país, ej: 51987654321):", "51999999999");
+    if (!testNum) return;
+    
+    try {
+      const response = await fetch(whatsappApiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          number: testNum.replace(/\D/g, ''),
+          message: "🌿 *Sánori - Notificaciones*\n\n¡Prueba exitosa! Este es un mensaje automatizado desde tu sistema de ventas Sánori a través de tu API de WhatsApp autohospedada.",
+          token: whatsappToken,
+          session: whatsappSession
+        })
+      });
+      if (response.ok) {
+        alert(`¡Petición enviada exitosamente al número ${testNum}! Revisa el chat de WhatsApp.`);
+      } else {
+        alert(`Error: servidor respondió con código ${response.status}. Verifica que la sesión de tu API esté activa.`);
+      }
+    } catch (err: any) {
+      alert(`Error de red/conexión al conectar con tu API de WhatsApp: ${err.message || String(err)}`);
+    }
+  };
+
+  const getWhatsAppManualUrl = (order: any, type: 'payment_pending' | 'payment_verified' | 'order_shipped') => {
+    if (!order) return '';
+    const name = order.customerName || 'Cliente';
+    const id = order.id;
+    const total = (order.total || 0).toFixed(2);
+    
+    let text = "";
+    if (type === 'payment_pending') {
+      text = `¡Hola *${name}*! 🌿 Te saluda Sánori.\n\nVimos que registraste un pedido con el ID \`${id}\` por un total de *S/ ${total}*.\n\nQueremos ayudarte a finalizar tu compra de cosmética viva artesanal. ¿Pudiste realizar tu pago por Yape o Tarjeta? Si es así, por favor compártenos el comprobante por aquí para agendar tu envío hoy mismo. ¡Muchas gracias!`;
+    } else if (type === 'payment_verified') {
+      text = `¡Hola *${name}*! 🌿 Excelentes noticias.\n\nHemos verificado con éxito tu pago de *S/ ${total}* para tu pedido de Sánori (ID: \`${id}\`).\n\nNuestros artesanos ya comenzaron a prepararlo en el taller de Sánori con insumos frescos de temporada. ¡Gracias por elegir bienestar consciente!`;
+    } else if (type === 'order_shipped') {
+      text = `¡Hola *${name}*! 🌿 Te saluda Sánori.\n\nTe escribimos para avisarte que tu pedido (ID: \`${id}\`) ya fue despachado y se encuentra en camino a tu dirección de envío. 🚚\n\nEsperamos que lo disfrutes mucho y que te brinde una experiencia única y natural.`;
+    }
+    
+    const cleanPhone = (order.customerPhone || '').replace(/\D/g, '');
+    const prefix = cleanPhone.length === 9 ? '51' : '';
+    return `https://wa.me/${prefix}${cleanPhone}?text=${encodeURIComponent(text)}`;
+  };
 
   useEffect(() => {
     if (!loading && !isAdmin) {
@@ -341,6 +500,13 @@ export default function Admin() {
           heroImageUrl: heroImage,
           aboutImageUrl: aboutImage,
           innovateImageUrl: innovateImage,
+          telegramEnabled: telegramEnabled,
+          telegramBotToken: telegramBotToken,
+          telegramChatId: telegramChatId,
+          whatsappEnabled: whatsappEnabled,
+          whatsappApiUrl: whatsappApiUrl,
+          whatsappToken: whatsappToken,
+          whatsappSession: whatsappSession,
         },
         { merge: true },
       );
@@ -904,6 +1070,193 @@ export default function Admin() {
                   )}
                 </div>
 
+                {/* CONFIGURACIÓN DE NOTIFICACIONES TELEGRAM */}
+                <div className="pt-6 border-t border-earth/10 space-y-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-widest text-earth flex items-center gap-2">
+                    <span>📢 Notificaciones de Compras (Telegram)</span>
+                  </h3>
+                  <p className="text-[11px] text-earth-light leading-relaxed">
+                    Recibe un mensaje automático en tu celular por Telegram cada vez que un cliente complete su pago o registre un pedido.
+                  </p>
+                  
+                  <div className="flex items-center gap-3 bg-earth/5 p-3 rounded-xl border border-earth/10">
+                    <input
+                      type="checkbox"
+                      id="telegramEnabled"
+                      checked={telegramEnabled}
+                      onChange={(e) => setTelegramEnabled(e.target.checked)}
+                      className="w-4 h-4 accent-nativa cursor-pointer"
+                    />
+                    <label htmlFor="telegramEnabled" className="text-xs font-semibold text-earth cursor-pointer select-none">
+                      Activar alertas en tiempo real
+                    </label>
+                  </div>
+
+                  {telegramEnabled && (
+                    <div className="space-y-4 pt-2 animate-in fade-in">
+                      <div className="bg-mustard/10 border border-mustard/30 p-4 rounded-xl text-xs text-earth space-y-2">
+                        <p className="font-bold">🛠️ Guía rápida de configuración :</p>
+                        <ol className="list-decimal list-inside space-y-1 text-[11px] text-earth-light">
+                          <li>Busca el usuario <strong className="text-earth">@BotFather</strong> en Telegram, escribe <code className="bg-background px-1 py-0.5 rounded">/newbot</code>, sigue las instrucciones y copia el <strong>Token</strong> generado.</li>
+                          <li>Busca el usuario <strong className="text-earth">@userinfobot</strong> en tu propio Telegram, envíale algo y copia tu <strong>Id</strong> (número).</li>
+                          <li>¡Imprescindible! Entra al chat de tu nuevo bot y presiona <strong className="text-earth">/start</strong> para autorizarlo a enviarte mensajes.</li>
+                        </ol>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] uppercase tracking-widest text-earth/70 font-semibold">
+                          Token del Bot (HTTP API Token)
+                        </label>
+                        <input
+                          type="text"
+                          value={telegramBotToken}
+                          onChange={(e) => setTelegramBotToken(e.target.value)}
+                          placeholder="Ej: 1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                          className="w-full border border-earth/20 p-3 outline-none focus:border-nativa rounded-xl bg-background transition-colors text-xs font-mono"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] uppercase tracking-widest text-earth/70 font-semibold">
+                          Chat ID (Tu número identificador)
+                        </label>
+                        <input
+                          type="text"
+                          value={telegramChatId}
+                          onChange={(e) => setTelegramChatId(e.target.value)}
+                          placeholder="Ej: 987654321"
+                          className="w-full border border-earth/20 p-3 outline-none focus:border-nativa rounded-xl bg-background transition-colors text-xs font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={testTelegramMessage}
+                          className="mt-2 text-[10px] text-nativa uppercase tracking-widest font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          🧪 Enviar mensaje de prueba
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* CONFIGURACIÓN DE NOTIFICACIONES WHATSAPP AUTOMÁTICAS */}
+                <div className="pt-6 border-t border-earth/10 space-y-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-widest text-earth flex items-center gap-2">
+                    <span>🟢 Mensajería de Clientes Automatizada (WhatsApp API)</span>
+                  </h3>
+                  <p className="text-[11px] text-earth-light leading-relaxed">
+                    Envía avisos automáticos por WhatsApp a tus clientes cuando realicen una compra, su pago sea verificado y cuando despaches su pedido. Utiliza una API autohospedada gratuita para no pagar comisiones.
+                  </p>
+
+                  <div className="flex items-center gap-3 bg-earth/5 p-3 rounded-xl border border-earth/10">
+                    <input
+                      type="checkbox"
+                      id="whatsappEnabled"
+                      checked={whatsappEnabled}
+                      onChange={(e) => setWhatsappEnabled(e.target.checked)}
+                      className="w-4 h-4 accent-nativa cursor-pointer"
+                    />
+                    <label htmlFor="whatsappEnabled" className="text-xs font-semibold text-earth cursor-pointer select-none">
+                      Activar respuestas de WhatsApp automatizadas
+                    </label>
+                  </div>
+
+                  {whatsappEnabled && (
+                    <div className="space-y-4 pt-2 animate-in fade-in">
+                      <div className="bg-nativa/5 border border-nativa/30 p-4 rounded-xl space-y-3">
+                        <p className="text-xs font-bold text-nativa">🐳 Receta Práctica: Backend WhatsApp Autohospedado Gratis</p>
+                        <p className="text-[11px] text-earth-light leading-relaxed">
+                          La forma más rápida, estable y 100% gratuita es usar la API de código abierto <strong className="text-earth">WAHA (WhatsApp HTTP API)</strong> o <strong className="text-earth">Evolution API</strong> en tu propia computadora o un servidor gratuito (como Railway o Render).
+                        </p>
+                        
+                        <div className="bg-background border border-earth/10 p-3 rounded-lg text-[10px] text-earth font-mono space-y-2">
+                          <p className="font-bold text-nativa"># Opción A: Levantar con Docker (1 segundo)</p>
+                          <code>docker run -d -p 8080:3000 devlikeapro/waha</code>
+                          <p className="text-[9px] text-earth-light mt-1">
+                            El servidor correrá en http://localhost:8080. Entra allí desde tu navegador, escanea el código QR con tu WhatsApp y listo. ¡Ya tienes tu API gratis!
+                          </p>
+                        </div>
+
+                        <div className="bg-background border border-earth/10 p-3 rounded-lg text-[10px] text-earth font-mono space-y-2">
+                          <p className="font-bold text-nativa"># Opción B: Script en Python (FastAPI + whatsapp-web.js / custom)</p>
+                          <p className="text-[9px] text-earth-light leading-relaxed">
+                            Crea un archivo <code className="bg-earth/5 px-1 rounded">main.py</code> en tu backend local:
+                          </p>
+                          <pre className="overflow-x-auto max-h-40 text-[9px] bg-earth/5 p-2 rounded">
+{`from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import requests
+
+app = FastAPI()
+
+class MsgPayload(BaseModel):
+    number: str
+    message: str
+    token: str = None
+    session: str = "sanori"
+
+@app.post("/send-message")
+async def send_whatsapp(payload: MsgPayload):
+    # Aquí conectas tu librería de WhatsApp favorita como baileys o un robot de selenium
+    print(f"Enviando a {payload.number}: {payload.message}")
+    # Retornar éxito
+    return {"status": "success", "sent": True}`}
+                          </pre>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] uppercase tracking-widest text-earth/70 font-semibold">
+                          URL de tu API de WhatsApp
+                        </label>
+                        <input
+                          type="url"
+                          value={whatsappApiUrl}
+                          onChange={(e) => setWhatsappApiUrl(e.target.value)}
+                          placeholder="Ej: http://localhost:8080/api/sendText o https://tu-api.railway.app/send-message"
+                          className="w-full border border-earth/20 p-3 outline-none focus:border-nativa rounded-xl bg-background transition-colors text-xs font-mono"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="block text-[11px] uppercase tracking-widest text-earth/70 font-semibold">
+                            Token de Seguridad / API Key
+                          </label>
+                          <input
+                            type="password"
+                            value={whatsappToken}
+                            onChange={(e) => setWhatsappToken(e.target.value)}
+                            placeholder="Opcional"
+                            className="w-full border border-earth/20 p-3 outline-none focus:border-nativa rounded-xl bg-background transition-colors text-xs font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] uppercase tracking-widest text-earth/70 font-semibold">
+                            ID de Sesión (Session ID)
+                          </label>
+                          <input
+                            type="text"
+                            value={whatsappSession}
+                            onChange={(e) => setWhatsappSession(e.target.value)}
+                            placeholder="Ej: sanori"
+                            className="w-full border border-earth/20 p-3 outline-none focus:border-nativa rounded-xl bg-background transition-colors text-xs font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={testWhatsappMessage}
+                        className="mt-2 text-[10px] text-nativa uppercase tracking-widest font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        🧪 Enviar WhatsApp de prueba a número custom
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-4 border-t border-earth/10">
                   <button
                     type="submit"
@@ -1339,30 +1692,19 @@ export default function Admin() {
                         {/* Quick Control Inside Email */}
                         <div className="bg-mustard/10 p-5 rounded-xl border border-mustard/30 space-y-4">
                           <p className="text-xs font-bold uppercase tracking-widest text-earth">
-                            Acciones de Verificación Directa:
+                            Acciones de Verificación:
                           </p>
-                          <div className="flex flex-wrap gap-3">
+                          <div className="flex flex-wrap gap-2.5">
                             <button
                               onClick={() => togglePaymentVerification(selectedOrder.id, !!selectedOrder.paymentVerified)}
-                              className={`px-4 py-2 text-xs rounded-full font-bold uppercase tracking-wider transition-all border ${
+                              className={`px-3.5 py-1.5 text-xs rounded-full font-bold uppercase tracking-wider transition-all border ${
                                 selectedOrder.paymentVerified
-                                  ? 'bg-green-700 text-offwhite border-green-800'
-                                  : 'bg-earth text-offwhite border-earth'
+                                  ? 'bg-green-700 text-offwhite border-green-800 hover:bg-green-800'
+                                  : 'bg-earth text-offwhite border-earth hover:bg-kraft'
                               }`}
                             >
                               {selectedOrder.paymentVerified ? '✓ Pago Verificado' : '⚙ Marcar Pago Verificado'}
                             </button>
-
-                            {selectedOrder.customerPhone && (
-                              <a
-                                href={`https://wa.me/51${selectedOrder.customerPhone.replace(/[\s\-]/g, '')}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-4 py-2 bg-nativa hover:bg-nativa-light text-offwhite rounded-full text-xs font-bold uppercase tracking-wider transition-all"
-                              >
-                                Contactar por WhatsApp
-                              </a>
-                            )}
 
                             <button
                               onClick={() => {
@@ -1370,11 +1712,57 @@ export default function Admin() {
                                 alert("Pedido marcado como 'Preparado'. Ha avanzado a la etapa siguiente.");
                               }}
                               disabled={selectedOrder.status !== 'pending'}
-                              className="px-4 py-2 border border-earth text-earth hover:bg-earth/5 disabled:opacity-50 text-xs font-bold uppercase tracking-wider rounded-full"
+                              className="px-3.5 py-1.5 border border-earth text-earth hover:bg-earth/5 disabled:opacity-50 text-xs font-bold uppercase tracking-wider rounded-full font-sans"
                             >
                               Preparado para Despacho
                             </button>
                           </div>
+
+                          {selectedOrder.customerPhone && (
+                            <div className="pt-3 border-t border-earth/10 space-y-2">
+                              <p className="text-[11px] font-bold uppercase tracking-widest text-earth-light">
+                                💬 Notificar por WhatsApp de Cliente:
+                              </p>
+                              {settings?.whatsappEnabled ? (
+                                <p className="text-[10px] text-green-700 font-medium">
+                                  ✨ API Automatizada Activa. Los cambios de estado disparan mensajes automáticos.
+                                </p>
+                              ) : (
+                                <p className="text-[10px] text-earth-light">
+                                  Modo Marcha Blanca: Elige una plantilla abajo para abrir el chat con el mensaje pre-redactado.
+                                </p>
+                              )}
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                <a
+                                  href={getWhatsAppManualUrl(selectedOrder, 'payment_pending')}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-3 py-1.5 bg-nativa/10 border border-nativa/30 hover:bg-nativa/20 text-nativa rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5"
+                                  title="Solicitar comprobante de pago por WhatsApp"
+                                >
+                                  ⏳ Recordar Pago / Yape
+                                </a>
+                                <a
+                                  href={getWhatsAppManualUrl(selectedOrder, 'payment_verified')}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-3 py-1.5 bg-green-50 border border-green-200 hover:bg-green-100 text-green-800 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5"
+                                  title="Confirmar recepción del pago"
+                                >
+                                  ✅ Confirmar Pago
+                                </a>
+                                <a
+                                  href={getWhatsAppManualUrl(selectedOrder, 'order_shipped')}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-3 py-1.5 bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-800 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5"
+                                  title="Enviar código/notificación de envío"
+                                >
+                                  🚚 Notificar Despacho
+                                </a>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
