@@ -66,7 +66,16 @@ async def monitor_whatsapp_status():
                 "--disable-accelerated-2d-canvas",
                 "--disable-gpu",
                 "--disable-extensions",
-                "--disable-blink-features=AutomationControlled"
+                "--disable-blink-features=AutomationControlled",
+                "--disable-background-networking",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-sync",
+                "--metrics-recording-only",
+                "--disable-default-apps",
+                "--mute-audio",
+                "--no-first-run",
+                "--js-flags=--max-old-space-size=256"
             ]
         )
         pw_resources["browser_context"] = context
