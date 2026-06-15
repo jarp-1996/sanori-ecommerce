@@ -1,6 +1,5 @@
-# Usamos la imagen oficial de Microsoft Playwright para Python
-# Esta imagen ya viene con Python, Pip y todos los códecs de los navegadores instalados
-FROM mcr.microsoft.com/playwright/python:v1.42.0-jammy
+# Usamos una imagen base oficial de Python (Debian)
+FROM python:3.11-slim-bookworm
 
 # Directorio de trabajo en el contenedor
 WORKDIR /app
@@ -9,7 +8,11 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Instalar las dependencias de Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Instalar los navegadores de Playwright y sus dependencias de sistema operativo
+RUN playwright install --with-deps chromium
 
 # Copiar el backend de automatización
 COPY main.py .
