@@ -224,9 +224,37 @@ async def get_dashboard():
                 
                 <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
                     <p class="text-xs font-bold text-gray-600">Endpoint para Desarrollo de tu Tienda:</p>
-                    <code class="block bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono">POST http://localhost:8000/send-message</code>
+                    <code class="block bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono">POST /send-message</code>
                     <p class="text-[10px] text-gray-400">Este microservicio ya se encuentra vinculado a tu panel administrador de Sánori.</p>
                 </div>
+            </div>
+
+            <!-- Panel de Diagnóstico -->
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                <h3 class="text-md font-bold text-gray-700">🔍 Consola de Diagnóstico (Captura en Vivo)</h3>
+                <p class="text-xs text-gray-500 leading-relaxed">Si el bot tarda en sincronizar o quieres ver qué está haciendo el navegador en la nube en tiempo real, puedes tomar una captura de pantalla a continuación.</p>
+                
+                <div class="flex flex-col items-center space-y-4">
+                    <button onclick="refreshScreenshot()" class="bg-[#1F2E22] text-white text-xs px-5 py-2.5 rounded-xl font-bold hover:bg-opacity-90 shadow-sm transition-all focus:ring-2 focus:ring-[#1F2E22]">
+                        📷 Obtener Captura de Pantalla Actual
+                    </button>
+                    
+                    <div class="border border-gray-200 rounded-xl overflow-hidden shadow-inner max-w-full bg-black flex items-center justify-center p-1 w-full" style="min-height: 250px;">
+                        <img id="live-screenshot" src="/screenshot" alt="Captura del navegador" class="max-w-full rounded-lg hidden" onload="document.getElementById('screenshot-loader-text').style.display='none'; this.classList.remove('hidden')">
+                        <span id="screenshot-loader-text" class="text-gray-400 text-xs py-12">Haz click para recibir una captura fresca desde el navegador seguro...</span>
+                    </div>
+                </div>
+                
+                <script>
+                    function refreshScreenshot() {
+                        const img = document.getElementById('live-screenshot');
+                        const loader = document.getElementById('screenshot-loader-text');
+                        img.classList.add('hidden');
+                        loader.innerText = 'Cargando captura actual...';
+                        loader.style.display = 'block';
+                        img.src = '/screenshot?t=' + Date.now();
+                    }
+                </script>
             </div>
         </main>
 
@@ -247,6 +275,22 @@ async def get_qr_image():
     if bot_state["status"] != "qr_needed" or not os.path.exists(QR_FILE_PATH):
         raise HTTPException(status_code=404, detail="No se requiere escaneo de código QR en este momento o ya está logueado.")
     return FileResponse(QR_FILE_PATH, media_type="image/png")
+
+
+@app.get("/screenshot")
+async def get_screenshot():
+    """
+    Toma una captura de pantalla de la página actual en Playwright en tiempo real.
+    """
+    from fastapi.responses import Response
+    page = pw_resources["page"]
+    if not page:
+        raise HTTPException(status_code=500, detail="Navegador de WhatsApp Web aún no inicializado.")
+    try:
+        screenshot_bytes = await page.screenshot(type="png")
+        return Response(content=screenshot_bytes, media_type="image/png")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo tomar la captura de pantalla: {str(e)}")
 
 
 @app.get("/status")
