@@ -3,6 +3,7 @@ import asyncio
 import urllib.parse
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from playwright.async_api import async_playwright
 import pyqrcode
@@ -10,6 +11,14 @@ import pyqrcode
 app = FastAPI(
     title="Sánori - WhatsApp Bot Core",
     description="Microservicio autohospedado en Python para automatización libre de WhatsApp Web usando Playwright y FastAPI."
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Directorio para guardar la sesión del navegador para mantener el inicio de sesión
