@@ -1094,15 +1094,6 @@ export default function Admin() {
 
                   {telegramEnabled && (
                     <div className="space-y-4 pt-2 animate-in fade-in">
-                      <div className="bg-mustard/10 border border-mustard/30 p-4 rounded-xl text-xs text-earth space-y-2">
-                        <p className="font-bold">🛠️ Guía rápida de configuración :</p>
-                        <ol className="list-decimal list-inside space-y-1 text-[11px] text-earth-light">
-                          <li>Busca el usuario <strong className="text-earth">@BotFather</strong> en Telegram, escribe <code className="bg-background px-1 py-0.5 rounded">/newbot</code>, sigue las instrucciones y copia el <strong>Token</strong> generado.</li>
-                          <li>Busca el usuario <strong className="text-earth">@userinfobot</strong> en tu propio Telegram, envíale algo y copia tu <strong>Id</strong> (número).</li>
-                          <li>¡Imprescindible! Entra al chat de tu nuevo bot y presiona <strong className="text-earth">/start</strong> para autorizarlo a enviarte mensajes.</li>
-                        </ol>
-                      </div>
-
                       <div className="space-y-1">
                         <label className="block text-[11px] uppercase tracking-widest text-earth/70 font-semibold">
                           Token del Bot (HTTP API Token)
