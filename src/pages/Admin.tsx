@@ -1163,48 +1163,6 @@ export default function Admin() {
 
                   {whatsappEnabled && (
                     <div className="space-y-4 pt-2 animate-in fade-in">
-                      <div className="bg-nativa/5 border border-nativa/30 p-4 rounded-xl space-y-3">
-                        <p className="text-xs font-bold text-nativa">🐳 Receta Práctica: Backend WhatsApp Autohospedado Gratis</p>
-                        <p className="text-[11px] text-earth-light leading-relaxed">
-                          La forma más rápida, estable y 100% gratuita es usar la API de código abierto <strong className="text-earth">WAHA (WhatsApp HTTP API)</strong> o <strong className="text-earth">Evolution API</strong> en tu propia computadora o un servidor gratuito (como Railway o Render).
-                        </p>
-                        
-                        <div className="bg-background border border-earth/10 p-3 rounded-lg text-[10px] text-earth font-mono space-y-2">
-                          <p className="font-bold text-nativa"># Opción A: Levantar con Docker (1 segundo)</p>
-                          <code>docker run -d -p 8080:3000 devlikeapro/waha</code>
-                          <p className="text-[9px] text-earth-light mt-1">
-                            El servidor correrá en http://localhost:8080. Entra allí desde tu navegador, escanea el código QR con tu WhatsApp y listo. ¡Ya tienes tu API gratis!
-                          </p>
-                        </div>
-
-                        <div className="bg-background border border-earth/10 p-3 rounded-lg text-[10px] text-earth font-mono space-y-2">
-                          <p className="font-bold text-nativa"># Opción B: Script en Python (FastAPI + whatsapp-web.js / custom)</p>
-                          <p className="text-[9px] text-earth-light leading-relaxed">
-                            Crea un archivo <code className="bg-earth/5 px-1 rounded">main.py</code> en tu backend local:
-                          </p>
-                          <pre className="overflow-x-auto max-h-40 text-[9px] bg-earth/5 p-2 rounded">
-{`from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import requests
-
-app = FastAPI()
-
-class MsgPayload(BaseModel):
-    number: str
-    message: str
-    token: str = None
-    session: str = "sanori"
-
-@app.post("/send-message")
-async def send_whatsapp(payload: MsgPayload):
-    # Aquí conectas tu librería de WhatsApp favorita como baileys o un robot de selenium
-    print(f"Enviando a {payload.number}: {payload.message}")
-    # Retornar éxito
-    return {"status": "success", "sent": True}`}
-                          </pre>
-                        </div>
-                      </div>
-
                       <div className="space-y-1">
                         <label className="block text-[11px] uppercase tracking-widest text-earth/70 font-semibold">
                           URL de tu API de WhatsApp
