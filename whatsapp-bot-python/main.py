@@ -56,7 +56,7 @@ async def monitor_whatsapp_status():
         print("🔧 Iniciando contexto persistente de Chromium...")
         context = await pw.chromium.launch_persistent_context(
             user_data_dir=USER_DATA_DIR,
-            headless=True,
+            headless=False,
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
             args=[
